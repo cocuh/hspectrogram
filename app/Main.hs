@@ -1,4 +1,5 @@
 module Main where
+import System.Environment (getArgs)
 import Control.Concurrent.Async
 import Control.Concurrent hiding (yield)
 import Control.Monad
@@ -33,7 +34,7 @@ rjust size filler inp
 
 fft :: Int -> Pipe [WAVESample] [Double] IO()
 fft chunkSize = forever $ do
-    let step = 7
+    let step = 18
     let fftNum = 128
     a <- await
     let vec = rjust fftNum 0 $takeStep step $ takeStep 2 a
@@ -42,31 +43,31 @@ fft chunkSize = forever $ do
     yield $ map (\x -> x * ratio) spec
 
 
-convSpectrumMat :: [Double] -> Int -> [(Int, String)]
-convSpectrumMat input offsetY =
+convSpectrumMat :: [Double] -> Int -> Int -> [(Int, String)]
+convSpectrumMat input offsetY height =
     serializer 0
     where
-        arr = rjust 1 0 $ map (\x -> floor (x * 2)) input
-        height = 30
+        arr = rjust 1 0 $ map (\x -> floor x) input
         serializer y
-            | height < y = []
-            | otherwise  = [(height - y + offsetY, map (\i -> if i>y then '#' else ' ') arr)]++serializer (y+1)
+            | height - offsetY <= y= []
+            | otherwise  = [(abs(height - y), map (\i -> if i>y then '#' else ' ') arr)]++serializer (y+1)
 
-spectrogram :: Int -> Int -> Consumer [Double] IO ()
-spectrogram chunkNo chunkNum = forever $ do
+spectrogram :: Int -> Int -> String-> Consumer [Double] IO ()
+spectrogram chunkNo chunkNum filename = forever $ do
     (height, width) <-lift $ C.scrSize
     a <- await
     let arr = rjust 1 0 a
     let offsetX = 0
-    let offsetY = 5
-    let mat = convSpectrumMat arr offsetY
+    let offsetY = 4
+    let mat = convSpectrumMat arr offsetY (height-2)
     let cprintLn y str = C.mvWAddStr C.stdScr y offsetX str
-    lift $ mapM (\(y, s) -> cprintLn y s) mat
+    lift $ mapM (\(y, s) -> cprintLn y $take width s) mat
     lift $ cprintLn 0 ("     chunkNo:"++(show chunkNo) ++ "/" ++ show chunkNum)
     lift $ cprintLn 1 ("max spectrum:"++(show $ maximum arr ))
     lift $ cprintLn 2 ("num spectrum:"++(show $ length arr ))
+    lift $ cprintLn 3 ("    filename:"++filename)
     lift $ C.refresh
-    spectrogram (chunkNo+1) chunkNum
+    spectrogram (chunkNo+1) chunkNum filename
 
 
 concat' :: [[a]] -> [a]
@@ -80,14 +81,14 @@ main = do
             putStrLn "keybord interupted"
             killThread tid
     installHandler keyboardSignal (Catch handler) Nothing
-
-    input <- getWAVEFile "/tmp/no_poi.wav"
+    (waveFileName:_) <- getArgs
+    input <- getWAVEFile waveFileName
     let header = waveHeader input
     let resolution = 2^64 :: Double
     let channels = waveNumChannels header
     let samples = waveSamples input
     let sampleLength = fromMaybe 0 $waveFrames header
-    let chunkSize = 2^10
+    let chunkSize = 2^11
     let chunkNum = (sampleLength `div` chunkSize) + 1
 
     s<-simpleNew Nothing "ninja" Play Nothing "youjo"
@@ -103,7 +104,7 @@ main = do
     plotter <- async $ do
         CH.start
         C.refresh
-        runEffect $ fromInput plotterInput >-> fft chunkSize>-> spectrogram 0 chunkNum
+        runEffect $ fromInput plotterInput >-> fft chunkSize>-> spectrogram 0 chunkNum waveFileName
         C.endWin
         performGC
     mapM_ wait [player, plotter]

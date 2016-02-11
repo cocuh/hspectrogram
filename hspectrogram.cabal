@@ -23,7 +23,6 @@ library
                      , async
                      , hscurses
                      , pulse-simple
-                     , carray
                      , pipes
                      , pipes-group
                      , pipes-concurrency
@@ -42,8 +41,6 @@ executable hspectrogram
                      , WAVE
                      , unix
                      , pulse-simple
-                     , array
-                     , carray
                      , pipes
                      , pipes-group
                      , pipes-concurrency
